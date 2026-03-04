@@ -4,6 +4,8 @@
 const RAPIDAPI_KEY = "afc08d77a3msha9dbce2c87bd4d4p1c4c64jsn5dacbf93e3eb"; // Replace with your actual RapidAPI key
 const RAPIDAPI_HOST = "instagram-social-api.p.rapidapi.com";
 
+const HIKER_KEYHOST = "";
+
 const TIKTOK_HOST = "https://api.omar-thing.site";
 const TIKTOK_KEY = "vS2LUxpdqGJX8agO";
 
