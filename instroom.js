@@ -3,6 +3,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const loadingDiv = document.getElementById("loading");
   const errorDiv = document.getElementById("error");
   const profileDataDiv = document.getElementById("profile-data");
+  const initialStateDiv = document.getElementById("initial-state");
   const usernameSpan = document.getElementById("username");
   const emailSpan = document.getElementById("email");
   const followersSpan = document.getElementById("followers");
@@ -14,6 +15,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const remainingCreditsSpan = document.getElementById("remaining-credits");
   const profileSection = document.querySelector(".profile-section") || document.getElementById("profile-data");
   const profilePicImg = document.getElementById("profile-pic");
+  const fetchDataBtn = document.getElementById("fetch-data-btn");
 
   let followersCountForEngagement = null; // Store followers count for engagement calculation
   let cachedPostStats = null; // Store post stats if they arrive before profile data
@@ -175,23 +177,32 @@ function displayPostStats(data) {
     const request = event.data;
     if (!request) return;
 
-    if (request.type === "refresh_sidebar") {
-      loadingDiv.style.display = "block";
+    if (request.type === "refresh_sidebar") { // When URL changes, content script sends this
+      // Reset to initial state, don't fetch automatically
+      initialStateDiv.style.display = "block";
+      loadingDiv.style.display = "none";
       profileDataDiv.style.display = "none";
       errorDiv.style.display = "none";
 
-      const spinnerHtml = '<div class="spinner"></div>';
-      engagementRateSpan.innerHTML = spinnerHtml;
-      averageLikesSpan.innerHTML = spinnerHtml;
-      averageCommentsSpan.innerHTML = spinnerHtml;
-      averageReelPlaysSpan.innerHTML = spinnerHtml;
+      // Update remaining credits on refresh
+      chrome.storage.local.get(["usageCount", "lastReset"], (result) => {
+        const MAX_USAGE = 1000;
+        let usageCount = result.usageCount || 0;
+        const lastReset = result.lastReset;
+        const currentMonth = new Date().toISOString().slice(0, 7);
 
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        chrome.tabs.sendMessage(tabs[0].id, { message: "get_profile_url" });
+        if (lastReset !== currentMonth) {
+            usageCount = 0;
+        }
+        const remaining = MAX_USAGE - usageCount;
+        remainingCreditsSpan.textContent = remaining;
       });
+
     } else if (request.message === "profile_data") {
       console.info("Full data object received in popup:", request.data);
 
+      // Hide initial state and loading, show data
+      initialStateDiv.style.display = "none";
       loadingDiv.style.display = "none";
       profileDataDiv.style.display = "block";
 
@@ -215,11 +226,8 @@ function displayPostStats(data) {
             usernameSpan.textContent = request.username;
         }
 
-        // Since we get some data, hide loading and show the profile section
-        if (request.profilePicUrl || request.username) {
-            loadingDiv.style.display = "none";
-            profileDataDiv.style.display = "block";
-        }
+        // Don't show the profile section yet, just pre-load the pic/username.
+        // The loading spinner is already visible from the button click.
     } else if (request.message === "profile_data_error") {
       displayError(request.error);
     } else if (request.message === "post_stats_data") {
@@ -257,6 +265,7 @@ function displayPostStats(data) {
         </div>
       `;
       }
+      initialStateDiv.style.display = "none";
       // Optionally, hide the profile data section
       profileDataDiv.style.display = "none";
 
@@ -265,24 +274,35 @@ function displayPostStats(data) {
     }
   });
 
-  // On popup open, get credits and then trigger profile data fetch
-  chrome.storage.local.get(["usageCount", "lastReset"], (result) => {
-    const MAX_USAGE = 1000;
-    let usageCount = result.usageCount || 0;
-    const remaining = MAX_USAGE - usageCount;
-    remainingCreditsSpan.textContent = remaining;
+  fetchDataBtn.addEventListener("click", () => {
+    // Show loading spinner and hide the button
+    initialStateDiv.style.display = "none";
+    loadingDiv.style.display = "block";
+    errorDiv.style.display = "none";
 
-    // Initialize spinners
+    // Initialize spinners for metrics
     const spinnerHtml = '<div class="spinner"></div>';
     engagementRateSpan.innerHTML = spinnerHtml;
     averageLikesSpan.innerHTML = spinnerHtml;
     averageCommentsSpan.innerHTML = spinnerHtml;
     averageReelPlaysSpan.innerHTML = spinnerHtml;
 
-    // Now, send a message to the content script to get the URL.
+    // Now, send a message to the content script to get the URL and trigger the fetch.
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      chrome.tabs.sendMessage(tabs[0].id, { message: "get_profile_url" });
+      if (tabs.length > 0 && tabs[0].id) {
+        chrome.tabs.sendMessage(tabs[0].id, { message: "get_profile_url" });
+      } else {
+        displayError("Could not find an active tab to analyze.");
+      }
     });
+  });
+
+  // On popup open, just get credits.
+  chrome.storage.local.get(["usageCount", "lastReset"], (result) => {
+    const MAX_USAGE = 1000;
+    let usageCount = result.usageCount || 0;
+    const remaining = MAX_USAGE - usageCount;
+    remainingCreditsSpan.textContent = remaining;
   });
 
   const resizeObserver = new ResizeObserver(() => {

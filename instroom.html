@@ -27,15 +27,21 @@
         </button>
       </div>
 
+      <!-- Initial state with Fetch button -->
+      <div id="initial-state" style="display: block;">
+        <p class="initial-text">Click the button to analyze this profile's insights and consume one credit.</p>
+        <button id="fetch-data-btn" class="fetch-btn">Analyze Profile</button>
+      </div>
+
       <!-- Loading -->
-      <div id="loading" class="loading">
+      <div id="loading" class="loading" style="display: none;">
         <div class="spinner"></div>
         Fetching influencer insights<br>
         This will only take a moment.
       </div>
 
       <!-- Error -->
-      <div id="error" class="error"></div>
+      <div id="error" class="error" style="display: none;"></div>
 
       <!-- Data -->
       <div id="profile-data" style="display: none">
