@@ -1,51 +1,38 @@
 // content.js
 
-function waitForElement(selector, fallbackSelector) {
+function waitForElement(selector, fallbackSelector, timeoutMs = 3000) {
   return new Promise(resolve => {
     const mainElement = document.querySelector(selector);
-    if (mainElement) {
-      return resolve(mainElement);
-    }
+    if (mainElement) return resolve(mainElement);
     if (fallbackSelector) {
-        const fallbackElement = document.querySelector(fallbackSelector);
-        if(fallbackElement) return resolve(fallbackElement);
+      const fallbackElement = document.querySelector(fallbackSelector);
+      if (fallbackElement) return resolve(fallbackElement);
     }
 
-    const observer = new MutationObserver(mutations => {
-        const mainElement = document.querySelector(selector);
-        if (mainElement) {
-            resolve(mainElement);
-            observer.disconnect();
-        } else if (fallbackSelector) {
-            const fallbackElement = document.querySelector(fallbackSelector);
-            if(fallbackElement) {
-                resolve(fallbackElement);
-                observer.disconnect();
-            }
-        }
+    const observer = new MutationObserver(() => {
+      const el = document.querySelector(selector);
+      if (el) { clearTimeout(timer); observer.disconnect(); resolve(el); return; }
+      if (fallbackSelector) {
+        const fb = document.querySelector(fallbackSelector);
+        if (fb) { clearTimeout(timer); observer.disconnect(); resolve(fb); }
+      }
     });
 
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true
-    });
+    const timer = setTimeout(() => { observer.disconnect(); resolve(null); }, timeoutMs);
+    observer.observe(document.body, { childList: true, subtree: true });
   });
 }
 
 // Keep this listener for communication with the sidebar iframe
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
     if (request.message === "get_profile_url") {
       (async () => {
-        const profileUrl = window.location.href;
         const profilePicUrl = await getProfilePicUrlFromPage();
-        const userId = getUserIdFromPage();
-        const username = getUsernameFromUrl();
         const msg = {
           message: "profile_url",
-          url: profileUrl,
+          url: window.location.href,
           profilePicUrl: profilePicUrl,
-          userId: userId,
-          username: username,
+          username: getUsernameFromUrl(),
         };
         
         chrome.runtime.sendMessage(msg);
@@ -68,10 +55,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     // Forward data messages from background to the iframe
     const forwardMessages = [
-        "profile_data", "profile_data_error",
-        "post_stats_data", "post_stats_error",
-        "reels_stats_data", "reels_stats_error",
-        "tiktok_email_data", "tiktok_stats_data", "tiktok_stats_error",
+        "instagram_data", "instagram_data_error",
+        "tiktok_data", "tiktok_data_error",
         "usage_limit_reached", "remaining_credits"
     ];
 
@@ -240,15 +225,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return null;
   }
 
-  async function getTikTokProfilePicUrl() {
-    try {
-      // Generic selector for TikTok avatar (often has class containing 'Avatar')
-      const imgElement = await waitForElement('img[class*="Avatar"]', 'span[shape="circle"] img');
-      if (imgElement) return imgElement.src;
-    } catch (e) {
-      console.error("Error extracting TikTok profile picture:", e);
-    }
-    return null;
+  function getTikTokProfilePicUrl() {
+    // Try immediately — no waiting. Railway API provides the avatar anyway.
+    const img = document.querySelector('img[class*="Avatar"]') ||
+                document.querySelector('span[shape="circle"] img');
+    return img ? img.src : null;
   }
 
   async function getProfilePicUrlFromPage() {
@@ -256,7 +237,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (hostname.includes("instagram.com")) {
       return await getInstagramProfilePicUrl();
     } else if (hostname.includes("tiktok.com")) {
-      return await getTikTokProfilePicUrl();
+      return getTikTokProfilePicUrl();
     }
     return null;
   }

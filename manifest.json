@@ -11,10 +11,9 @@
       "declarativeNetRequestWithHostAccess"
     ],
     "host_permissions": [
-      "https://instagram-social-api.p.rapidapi.com/*",
+      "https://apiinstroom-production.up.railway.app/*",
       "https://*.cdninstagram.com/*",
-      "https://*.fbcdn.net/*",
-      "https://api.omar-thing.site/*"
+      "https://*.fbcdn.net/*"
     ],
     "action": {
       "default_icon": {

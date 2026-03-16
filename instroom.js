@@ -17,9 +17,6 @@ document.addEventListener("DOMContentLoaded", () => {
   const profilePicImg = document.getElementById("profile-pic");
   const fetchDataBtn = document.getElementById("fetch-data-btn");
 
-  let followersCountForEngagement = null; // Store followers count for engagement calculation
-  let cachedPostStats = null; // Store post stats if they arrive before profile data
-
   // Initialize Bootstrap tooltips
   if (typeof bootstrap !== 'undefined') {
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach(el => {
@@ -28,31 +25,21 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   function formatNumber(num) {
-    if (typeof num !== 'number' || isNaN(num)) {
-      return "N/A";
-    }
-    if (num < 1000) {
-      return num.toString();
-    }
-    if (num < 1000000) {
-      return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
-    }
-    if (num < 1000000000) {
-      return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
-    }
+    if (typeof num !== 'number' || isNaN(num)) return "N/A";
+    if (num < 1000) return num.toString();
+    if (num < 1000000) return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+    if (num < 1000000000) return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
     return (num / 1000000000).toFixed(1).replace(/\.0$/, '') + 'B';
   }
 
-  function displayCommonProfileData(data) {
-    usernameSpan.textContent = data.username || "N/A";
-    emailSpan.textContent = data.email || "N/A";
-    locationSpan.textContent = data.location || "N/A";
-
-    if (data.profilePicUrl) {
-      profilePicImg.src = data.profilePicUrl;
-    } else {
-      profilePicImg.src = "images/instroomLogo.png"; // Fallback to default logo
-    }
+  function loadRemainingCredits() {
+    chrome.storage.local.get(["usageCount", "lastReset"], (result) => {
+      const MAX_USAGE = 1000;
+      let usageCount = result.usageCount || 0;
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      if (result.lastReset !== currentMonth) usageCount = 0;
+      remainingCreditsSpan.textContent = MAX_USAGE - usageCount;
+    });
   }
 
   // Minimize / restore popup
@@ -61,110 +48,44 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function applyMinimizedState(minimized) {
     if (!popupContainer || !minimizeBtn) return;
-    if (minimized) {
-      popupContainer.classList.add("minimized");
-      minimizeBtn.title = "Restore";
-    } else {
-      popupContainer.classList.remove("minimized");
-      minimizeBtn.title = "Minimize";
-    }
-    // notify parent about size change (sidebar/resizer)
-    const height = document.body.scrollHeight;
-    window.parent.postMessage({ type: "resize_sidebar", height: height }, "*");
-    try {
-      localStorage.setItem("instroom_minimized", minimized ? "1" : "0");
-    } catch (e) {
-      // ignore storage errors
-    }
+    popupContainer.classList.toggle("minimized", minimized);
+    minimizeBtn.title = minimized ? "Restore" : "Minimize";
+    window.parent.postMessage({ type: "resize_sidebar", height: document.body.scrollHeight }, "*");
+    try { localStorage.setItem("instroom_minimized", minimized ? "1" : "0"); } catch (e) {}
   }
 
   if (minimizeBtn && popupContainer) {
-    // restore state from localStorage
     let initialMin = false;
-    try {
-      initialMin = localStorage.getItem("instroom_minimized") === "1";
-    } catch (e) {
-      initialMin = false;
-    }
+    try { initialMin = localStorage.getItem("instroom_minimized") === "1"; } catch (e) {}
     applyMinimizedState(initialMin);
-
     minimizeBtn.addEventListener("click", () => {
-      const isMin = popupContainer.classList.contains("minimized");
-      applyMinimizedState(!isMin);
+      applyMinimizedState(!popupContainer.classList.contains("minimized"));
     });
   }
 
-  function displayInstagramData(data) {
-    displayCommonProfileData(data);
+  function displayCommonData(data) {
+    usernameSpan.textContent = data.username || "N/A";
+    emailSpan.textContent = data.email || "N/A";
+    locationSpan.textContent = data.location || "N/A";
+    profilePicImg.src = data.profilePicUrl || "images/instroomLogo.png";
+    profilePicImg.onerror = () => { profilePicImg.src = "images/instroomLogo.png"; };
     followersSpan.textContent = formatNumber(data.followers_count);
-    // engagementRateSpan is calculated later from post stats
-  
-    followersCountForEngagement = parseInt(
-      (data.followers_count || "0").toString().replace(/,/g, ""),
-      10
-    );
-  
-    // If post stats came first, display them now
-    if (cachedPostStats) {
-      displayPostStats(cachedPostStats);
-    }
+  }
+
+  function displayInstagramData(data) {
+    displayCommonData(data);
+    engagementRateSpan.textContent = data.engagement_rate || "N/A";
+    averageLikesSpan.textContent = data.avg_likes || "N/A";
+    averageCommentsSpan.textContent = data.avg_comments || "N/A";
+    averageReelPlaysSpan.textContent = data.avg_video_views || "N/A";
   }
 
   function displayTikTokData(data) {
-    displayCommonProfileData(data);
-    followersSpan.textContent = formatNumber(data.followers_count);
-    // Only update if data is provided, otherwise leave spinner from initial load
-    if (data.engagement_rate) {
-      engagementRateSpan.textContent = data.engagement_rate;
-    }
-    if (data.average_likes) {
-      averageLikesSpan.textContent = formatNumber(data.average_likes);
-    }
-    if (data.average_comments) {
-      averageCommentsSpan.textContent = formatNumber(data.average_comments);
-    }
-    if (data.average_views) {
-      averageReelPlaysSpan.textContent = formatNumber(data.average_views);
-    }
-  }
-
-function displayPostStats(data) {
-  cachedPostStats = data;
-  const POST_COUNT = 12;
-  // Calculate averages
-  let avgLikes = "N/A";
-  let avgComments = "N/A";
-  if (
-    typeof data.totalLikes === "number" &&
-    typeof data.totalComments === "number"
-  ) {
-    avgLikes = formatNumber(Math.round(data.totalLikes / POST_COUNT));
-    avgComments = formatNumber(Math.round(data.totalComments / POST_COUNT));
-  }
-
-  averageLikesSpan.textContent = avgLikes;
-  averageCommentsSpan.textContent = avgComments;
-
-  // Engagement rate calculation (as previously discussed)
-  if (
-    typeof data.totalLikes === "number" &&
-    typeof data.totalComments === "number" &&
-    followersCountForEngagement &&
-    followersCountForEngagement > 0
-  ) {
-    const avgEngagement = (data.totalLikes + data.totalComments) / POST_COUNT;
-    const engagementRate = (avgEngagement / followersCountForEngagement) * 100;
-    engagementRateSpan.textContent = engagementRate.toFixed(2) + "%";
-  }
-}
-
-  function displayReelsStats(data) {
-    if (data.averagePlays) {
-      // Use toLocaleString() to format the number with commas
-      averageReelPlaysSpan.textContent = formatNumber(parseInt(data.averagePlays, 10));
-    } else {
-      averageReelPlaysSpan.textContent = "N/A";
-    }
+    displayCommonData(data);
+    engagementRateSpan.textContent = data.engagement_rate || "N/A";
+    averageLikesSpan.textContent = data.avg_likes || "N/A";
+    averageCommentsSpan.textContent = data.avg_comments || "N/A";
+    averageReelPlaysSpan.textContent = data.avg_video_views || "N/A";
   }
 
   function displayError(message) {
@@ -177,96 +98,43 @@ function displayPostStats(data) {
     const request = event.data;
     if (!request) return;
 
-    if (request.type === "refresh_sidebar") { // When URL changes, content script sends this
-      // Reset to initial state, don't fetch automatically
+    if (request.type === "refresh_sidebar") {
       initialStateDiv.style.display = "block";
       loadingDiv.style.display = "none";
       profileDataDiv.style.display = "none";
       errorDiv.style.display = "none";
+      loadRemainingCredits();
 
-      // Update remaining credits on refresh
-      chrome.storage.local.get(["usageCount", "lastReset"], (result) => {
-        const MAX_USAGE = 1000;
-        let usageCount = result.usageCount || 0;
-        const lastReset = result.lastReset;
-        const currentMonth = new Date().toISOString().slice(0, 7);
-
-        if (lastReset !== currentMonth) {
-            usageCount = 0;
-        }
-        const remaining = MAX_USAGE - usageCount;
-        remainingCreditsSpan.textContent = remaining;
-      });
-
-    } else if (request.message === "profile_data") {
-      console.info("Full data object received in popup:", request.data);
-
-      // Hide initial state and loading, show data
+    } else if (request.message === "instagram_data") {
       initialStateDiv.style.display = "none";
       loadingDiv.style.display = "none";
       profileDataDiv.style.display = "block";
+      displayInstagramData(request.data);
 
-      profilePicImg.onerror = () => {
-        console.error("Failed to load image:", profilePicImg.src);
-      };
+    } else if (request.message === "tiktok_data") {
+      initialStateDiv.style.display = "none";
+      loadingDiv.style.display = "none";
+      profileDataDiv.style.display = "block";
+      displayTikTokData(request.data);
 
-      if (request.data.profileUrl && request.data.profileUrl.includes("tiktok.com")) {
-        displayTikTokData(request.data);
-      } else {
-        displayInstagramData(request.data);
-      }
     } else if (request.message === "profile_url") {
-        const profilePicImg = document.getElementById("profile-pic");
-        const usernameSpan = document.getElementById("username");
-        
-        if (request.profilePicUrl) {
-            profilePicImg.src = request.profilePicUrl;
-        }
-        if (request.username) {
-            usernameSpan.textContent = request.username;
-        }
+      if (request.profilePicUrl) profilePicImg.src = request.profilePicUrl;
+      if (request.username) usernameSpan.textContent = request.username;
 
-        // Don't show the profile section yet, just pre-load the pic/username.
-        // The loading spinner is already visible from the button click.
-    } else if (request.message === "profile_data_error") {
+    } else if (request.message === "instagram_data_error" || request.message === "tiktok_data_error") {
       displayError(request.error);
-    } else if (request.message === "post_stats_data") {
-      displayPostStats(request.data);
-    } else if (request.message === "post_stats_error") {
-      console.error("Error fetching post stats:", request.error);
-      // Also handle reels error display
-      displayReelsStats({ averagePlays: "Error" });
-      displayPostStats({ totalLikes: "Error", totalComments: "Error" });
-    } else if (request.message === "reels_stats_data") {
-      displayReelsStats(request.data);
-    } else if (request.message === "tiktok_email_data") {
-      if (request.data && request.data.email) {
-        emailSpan.textContent = request.data.email;
-      }
-    } else if (request.message === "tiktok_stats_data") {
-      const data = request.data;
-      engagementRateSpan.textContent = data.engagement_rate || "N/A";
-      averageLikesSpan.textContent = data.average_likes ? formatNumber(data.average_likes) : "N/A";
-      averageCommentsSpan.textContent = data.average_comments ? formatNumber(data.average_comments) : "N/A";
-      averageReelPlaysSpan.textContent = data.average_views ? formatNumber(data.average_views) : "N/A";
-    } else if (request.message === "tiktok_stats_error") {
-      console.error("Error fetching tiktok stats:", request.error);
-      engagementRateSpan.textContent = "Error";
-      averageLikesSpan.textContent = "Error";
-      averageCommentsSpan.textContent = "Error";
-      averageReelPlaysSpan.textContent = "Error";
+
     } else if (request.message === "usage_limit_reached") {
       displayError(request.error);
       if (profileSection) {
         profileSection.innerHTML = `
-        <div class="no-credits-message">
-          <p>You've reached your monthly credit limit. To continue using all features, please upgrade your plan:</p>
-          <a href="https://instroom-landing-page.vercel.app/" target="_blank">Subscribe</a>
-        </div>
-      `;
+          <div class="no-credits-message">
+            <p>You've reached your monthly credit limit. To continue using all features, please upgrade your plan:</p>
+            <a href="https://instroom-landing-page.vercel.app/" target="_blank">Subscribe</a>
+          </div>
+        `;
       }
       initialStateDiv.style.display = "none";
-      // Optionally, hide the profile data section
       profileDataDiv.style.display = "none";
 
     } else if (request.message === "remaining_credits") {
@@ -275,19 +143,16 @@ function displayPostStats(data) {
   });
 
   fetchDataBtn.addEventListener("click", () => {
-    // Show loading spinner and hide the button
     initialStateDiv.style.display = "none";
     loadingDiv.style.display = "block";
     errorDiv.style.display = "none";
 
-    // Initialize spinners for metrics
     const spinnerHtml = '<div class="spinner"></div>';
     engagementRateSpan.innerHTML = spinnerHtml;
     averageLikesSpan.innerHTML = spinnerHtml;
     averageCommentsSpan.innerHTML = spinnerHtml;
     averageReelPlaysSpan.innerHTML = spinnerHtml;
 
-    // Now, send a message to the content script to get the URL and trigger the fetch.
     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
       if (tabs.length > 0 && tabs[0].id) {
         chrome.tabs.sendMessage(tabs[0].id, { message: "get_profile_url" });
@@ -297,64 +162,33 @@ function displayPostStats(data) {
     });
   });
 
-  // On popup open, just get credits.
-  chrome.storage.local.get(["usageCount", "lastReset"], (result) => {
-    const MAX_USAGE = 1000;
-    let usageCount = result.usageCount || 0;
-    const remaining = MAX_USAGE - usageCount;
-    remainingCreditsSpan.textContent = remaining;
-  });
+  loadRemainingCredits();
 
   const resizeObserver = new ResizeObserver(() => {
-    const height = document.body.scrollHeight;
-    window.parent.postMessage({ type: "resize_sidebar", height: height }, "*");
+    window.parent.postMessage({ type: "resize_sidebar", height: document.body.scrollHeight }, "*");
   });
   resizeObserver.observe(document.body);
 
-  // Copy to clipboard functionality
+  // Copy to clipboard
   const copyBtn = document.getElementById("copy-email-btn");
-  const emailSpanForCopy = document.getElementById("email");
   let copyTimeout;
 
   if (copyBtn) {
     copyBtn.addEventListener("click", () => {
-      const emailText = emailSpanForCopy.textContent.trim();
+      const emailText = emailSpan.textContent.trim();
+      if (!emailText || emailText === "N/A") return;
 
-      if (!emailText || emailText === "N/A") {
-        return;
-      }
-
-      try {
-        // Create a temporary textarea element
-        const textarea = document.createElement("textarea");
-        textarea.value = emailText;
-        textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
-        document.body.appendChild(textarea);
-
-        // Select and copy
-        textarea.select();
-        document.execCommand("copy");
-
-        // Remove temporary element
-        document.body.removeChild(textarea);
-
-        // Show checkmark
+      navigator.clipboard.writeText(emailText).then(() => {
         const copyIcon = copyBtn.querySelector(".copy-icon");
         const checkIcon = copyBtn.querySelector(".check-icon");
-
         copyIcon.style.display = "none";
         checkIcon.style.display = "block";
-
-        // Reset after 1.5 seconds
         clearTimeout(copyTimeout);
         copyTimeout = setTimeout(() => {
           copyIcon.style.display = "block";
           checkIcon.style.display = "none";
         }, 1500);
-      } catch (err) {
-        console.error("Failed to copy email:", err);
-      }
+      }).catch(err => console.error("Failed to copy email:", err));
     });
   }
 });
