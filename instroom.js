@@ -178,7 +178,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const emailText = emailSpan.textContent.trim();
       if (!emailText || emailText === "N/A") return;
 
-      navigator.clipboard.writeText(emailText).then(() => {
+      const showCopied = () => {
         const copyIcon = copyBtn.querySelector(".copy-icon");
         const checkIcon = copyBtn.querySelector(".check-icon");
         copyIcon.style.display = "none";
@@ -188,7 +188,31 @@ document.addEventListener("DOMContentLoaded", () => {
           copyIcon.style.display = "block";
           checkIcon.style.display = "none";
         }, 1500);
-      }).catch(err => console.error("Failed to copy email:", err));
+      };
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(emailText).then(showCopied).catch(() => {
+          const ta = document.createElement("textarea");
+          ta.value = emailText;
+          ta.style.position = "fixed";
+          ta.style.opacity = "0";
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          if (document.execCommand("copy")) showCopied();
+          document.body.removeChild(ta);
+        });
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = emailText;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        if (document.execCommand("copy")) showCopied();
+        document.body.removeChild(ta);
+      }
     });
   }
 });

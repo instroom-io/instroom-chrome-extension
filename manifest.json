@@ -6,7 +6,8 @@
     "permissions": [
       "activeTab",
       "storage",
-"declarativeNetRequest",
+      "clipboardWrite",
+      "declarativeNetRequest",
       "declarativeNetRequestWithHostAccess"
     ],
     "host_permissions": [
