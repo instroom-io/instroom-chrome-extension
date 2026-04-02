@@ -74,6 +74,11 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
       const iframe = document.getElementById("instroom-sidebar-frame");
       if (iframe) {
         iframe.style.height = event.data.height + "px";
+        if (event.data.width) {
+          // Cap to real page viewport (window here is the page, not the iframe)
+          const maxW = window.innerWidth - 30;
+          iframe.style.width = Math.min(event.data.width, maxW) + "px";
+        }
       }
     }
   });
@@ -98,20 +103,44 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
         iframe = document.createElement("iframe");
         iframe.id = iframeId;
         iframe.src = chrome.runtime.getURL("instroom.html");
+        iframe.setAttribute("allowtransparency", "true");
         iframe.style.cssText = `
         position: fixed;
         top: 15px;
         right: 15px;
-        width: 340px;
+        width: min(340px, calc(100vw - 30px));
         max-width: calc(100vw - 30px);
-        height: 600px;
+        height: auto;
+        max-height: calc(100vh - 30px);
         border: none;
         z-index: 2147483647;
         border-radius: 16px;
         background: transparent;
+        overflow: hidden;
       `;
         document.body.appendChild(iframe);
+        injectTikTokStyles();
     }
+  }
+
+  function injectTikTokStyles() {
+    const isTikTok = window.location.hostname.includes("tiktok.com");
+    if (!isTikTok) return;
+    if (document.getElementById("instroom-tiktok-styles")) return;
+    const style = document.createElement("style");
+    style.id = "instroom-tiktok-styles";
+    style.textContent = `
+      /* Hide TikTok right-side floating action panel and download-app sidebar */
+      [data-e2e="channel-item"],
+      [data-e2e="download-channel-bar"],
+      [data-e2e="sidebar-video-action"],
+      [class*="DivSideNavContainer"],
+      [class*="DivMiniPlayerBar"],
+      [class*="FloatDownloadBar"],
+      [class*="DivActionBarContainer"],
+      [class*="DivSideBar"] { display: none !important; }
+    `;
+    document.head.appendChild(style);
   }
 
   // This is the part that will automatically show/hide the sidebar

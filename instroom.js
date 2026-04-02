@@ -46,11 +46,26 @@ document.addEventListener("DOMContentLoaded", () => {
   const minimizeBtn = document.getElementById("minimize-btn");
   const popupContainer = document.querySelector(".popup-container");
 
+  function sendResize() {
+    const isMinimized = popupContainer && popupContainer.classList.contains("minimized");
+    // Measure the exact rendered popup width; keep 340 when expanded to avoid feedback loops
+    // NOTE: window.innerWidth inside an iframe = iframe width, so always use 340 for expanded
+    const w = isMinimized
+      ? Math.ceil(popupContainer.getBoundingClientRect().width)
+      : 340;
+    window.parent.postMessage({
+      type: "resize_sidebar",
+      height: document.body.scrollHeight,
+      width: w
+    }, "*");
+  }
+
   function applyMinimizedState(minimized) {
     if (!popupContainer || !minimizeBtn) return;
     popupContainer.classList.toggle("minimized", minimized);
     minimizeBtn.title = minimized ? "Restore" : "Minimize";
-    window.parent.postMessage({ type: "resize_sidebar", height: document.body.scrollHeight }, "*");
+    // rAF ensures CSS has been applied before we measure the popup width
+    requestAnimationFrame(() => sendResize());
     try { localStorage.setItem("instroom_minimized", minimized ? "1" : "0"); } catch (e) {}
   }
 
@@ -164,9 +179,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   loadRemainingCredits();
 
-  const resizeObserver = new ResizeObserver(() => {
-    window.parent.postMessage({ type: "resize_sidebar", height: document.body.scrollHeight }, "*");
-  });
+  const resizeObserver = new ResizeObserver(() => { sendResize(); });
   resizeObserver.observe(document.body);
 
   // Copy to clipboard
